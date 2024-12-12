@@ -4,195 +4,136 @@
 #   "pandas",
 #   "matplotlib",
 #   "seaborn",
-#   "numpy",
-#   "plotly",
-#   "scipy"
+#   "openai"
 # ]
-# ///
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
-import plotly.express as px
-from scipy.stats import pearsonr
+from openai import ChatCompletion
+import sys
 
-# Set global seaborn style
-sns.set_theme(style="whitegrid")
+# Ensure AIPROXY_TOKEN is set as an environment variable
+AIPROXY_TOKEN = os.getenv("AIPROXY_TOKEN")
+if not AIPROXY_TOKEN:
+    sys.exit("AIPROXY_TOKEN is not set. Please set it as an environment variable.")
 
-def is_meaningful_column(column, df, unique_min=0.1, unique_max=0.9):
-    """Determine if a column is meaningful for visualization."""
-    unique_ratio = df[column].nunique() / len(df[column])
-    return unique_min < unique_ratio < unique_max
-
-def analyze_categorical_column(column, df, top_n=5):
-    """Generate insights for categorical columns."""
-    return df[column].value_counts().head(top_n)
-
-def correlation_analysis(df):
-    """Generate a heatmap for correlations between numerical columns."""
-    corr = df.corr()
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f')
-    plt.title('Correlation Heatmap')
-    plt.savefig('correlation_heatmap.png', bbox_inches='tight')
-    plt.close()
-    return 'correlation_heatmap.png'
-
-def generate_plots(df, output_dir):
-    """Generate a variety of plots based on the dataset."""
-    os.makedirs(output_dir, exist_ok=True)
-
-    plot_paths = []
-
-    # Numerical columns
-    numerical_columns = [col for col in df.select_dtypes(include=[np.number]).columns if is_meaningful_column(col, df)]
-    for i, column in enumerate(numerical_columns[:2]):
+# Function to attempt reading CSV with different encodings
+def load_csv_with_encoding(csv_file):
+    encodings = ['utf-8', 'ISO-8859-1', 'latin1', 'utf-16']  # Try common encodings
+    for encoding in encodings:
         try:
-            plt.figure(figsize=(8, 6))
-            if i == 0:  # Histogram for the first column
-                sns.histplot(df[column], kde=True, color='teal', bins=30)
-                plt.title(f'Histogram of {column}')
-            else:  # Box plot for the second column
-                sns.boxplot(y=df[column], color='orange')
-                plt.title(f'Box Plot of {column}')
+            return pd.read_csv(csv_file, encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    raise Exception("Unable to read CSV file with supported encodings.")
 
-            plt.xlabel(column)
-            plt.ylabel("Frequency" if i == 0 else column)
-            plt.grid(axis='y', linestyle='--', alpha=0.7)
+# Function to clean and process meaningful columns
+def clean_columns(df):
+    # Automatically drop columns that are likely identifiers (like ISBN, URLs, IDs, etc.)
+    # We drop columns that have non-numeric values and seem to be identifiers
+    df = df.loc[:, ~df.columns.str.contains('id|url|isbn|image|name', case=False, na=False)]
 
-            plot_path = os.path.join(output_dir, f'{column}_plot.png')
-            plt.savefig(plot_path, bbox_inches='tight')
-            plot_paths.append(plot_path)
+    # Remove columns with excessive unique values (e.g., book titles, URLs) that don't add value
+    for col in df.select_dtypes(include=['object']).columns:
+        if df[col].nunique() > 50:  # Heuristic: Drop high-cardinality categorical columns
+            df = df.drop(columns=[col])
+
+    # Automatically convert columns to numeric where applicable
+    df = df.apply(pd.to_numeric, errors='coerce')
+
+    # Drop rows where all values are NaN
+    df = df.dropna(how='all')
+
+    # Convert remaining object columns to 'category'
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype('category')
+
+    return df
+
+# Function to generate an analysis and visualizations
+def analyze_and_visualize(csv_file):
+    try:
+        # Load the dataset with different encoding options
+        df = load_csv_with_encoding(csv_file)
+        dataset_name = os.path.splitext(os.path.basename(csv_file))[0]
+
+        # Clean the dataset to focus on meaningful columns
+        df = clean_columns(df)
+
+        # Create a directory for the output
+        output_dir = dataset_name
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Basic insights
+        description = df.describe(include="all").to_string()
+        missing_values = df.isnull().sum().to_string()
+
+        # Visualization 1: Correlation heatmap for numerical data
+        if df.select_dtypes(include=['number']).shape[1] > 1:
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(df.corr(), annot=True, fmt=".2f", cmap="coolwarm")
+            plt.title("Correlation Heatmap")
+            heatmap_path = os.path.join(output_dir, "heatmap.png")
+            plt.savefig(heatmap_path)
             plt.close()
-        except Exception as e:
-            print(f"Error plotting {column}: {e}")
+        else:
+            heatmap_path = "No correlation heatmap generated (insufficient numerical data)."
 
-    # Categorical columns
-    categorical_columns = [col for col in df.select_dtypes(exclude=[np.number]).columns if is_meaningful_column(col, df)]
-    for column in categorical_columns[:1]:  # Limit to first categorical column
-        try:
+        # Visualization 2: Distribution of top numeric feature
+        numeric_columns = df.select_dtypes(include=['number']).columns
+        if len(numeric_columns) > 0:
+            top_feature = numeric_columns[0]
             plt.figure(figsize=(8, 6))
-            sns.countplot(
-                data=df, 
-                y=column, 
-                order=df[column].value_counts().index[:5],
-                palette='viridis'
-            )
-            plt.title(f'Top Categories in {column}')
-            plt.ylabel(column)
-            plt.xlabel("Count")
-            plt.grid(axis='x', linestyle='--', alpha=0.7)
-
-            plot_path = os.path.join(output_dir, f'{column}_categories.png')
-            plt.savefig(plot_path, bbox_inches='tight')
-            plot_paths.append(plot_path)
+            sns.histplot(df[top_feature], kde=True, color='blue')
+            plt.title(f"Distribution of {top_feature}")
+            distribution_path = os.path.join(output_dir, "distribution.png")
+            plt.savefig(distribution_path)
             plt.close()
-        except Exception as e:
-            print(f"Error plotting categories for column {column}: {e}")
+        else:
+            distribution_path = "No distribution plot generated (no numeric data)."
 
-    # Add correlation analysis
-    try:
-        correlation_path = correlation_analysis(df)
-        plot_paths.append(correlation_path)
-    except Exception as e:
-        print(f"Error generating correlation heatmap: {e}")
+        # Summarize analysis
+        summary = (
+            f"Dataset Name: {dataset_name}\n\n"
+            f"Basic Description:\n{description}\n\n"
+            f"Missing Values:\n{missing_values}\n\n"
+            f"Generated Visualizations:\n"
+            f"1. Correlation Heatmap: {heatmap_path}\n"
+            f"2. Distribution of {top_feature}: {distribution_path}\n"
+        )
 
-    return plot_paths
+        # Use LLM to narrate the story
+        story = generate_story_with_llm(summary)
 
-def generate_readme(output_dir, df, plot_paths):
-    """Generate a detailed README file summarizing the analysis."""
-    column_types = df.dtypes.value_counts()
-    dtype_summary = "\n".join([f"- **{dtype}**: {count} columns" for dtype, count in column_types.items()])
+        # Create README file
+        readme_path = os.path.join(output_dir, "README.txt")
+        with open(readme_path, "w") as readme_file:
+            readme_file.write(summary + "\n\n" + story)
 
-    num_rows, num_columns = df.shape
-    missing_count = df.isnull().sum().sum()
-    missing_columns = df.isnull().any().sum()
-    non_missing_columns = num_columns - missing_columns
-
-    numerical_summary = "\n".join(
-        [
-            f"- **{col}**: Mean = {df[col].mean():.2f}, Std Dev = {df[col].std():.2f}"
-            for col in df.select_dtypes(include=[np.number]).columns
-            if is_meaningful_column(col, df)
-        ]
-    )
-
-    categorical_summary = "\n".join(
-        [
-            f"- **{col}**: Top categories - {', '.join(map(str, analyze_categorical_column(col, df).index))}"
-            for col in df.select_dtypes(exclude=[np.number]).columns[:1]
-        ]
-    )
-
-    plots_markdown = "\n".join(
-        [f"![{os.path.basename(plot)}]({plot})" for plot in plot_paths]
-    ) if plot_paths else "No visualizations were generated."
-
-    readme_content = f"""
-# Data Analysis Report
-
-## Dataset Overview
-
-The dataset contains **{num_rows} rows** and **{num_columns} columns**. Here's the data type breakdown:
-{dtype_summary}
-
-- **{missing_columns} columns** have missing values.
-- **{non_missing_columns} columns** are complete.
-
-## Key Insights
-
-### Numerical Features
-{numerical_summary}
-
-### Categorical Features
-{categorical_summary}
-
-## Visualizations
-
-{plots_markdown}
-
-## Recommendations
-
-1. Address missing data using imputation or removal.
-2. Investigate relationships between variables.
-3. Explore advanced techniques for deeper insights.
-
----
-
-*Generated dynamically using Python.*
-"""
-
-    readme_path = os.path.join(output_dir, 'README.md')
-    with open(readme_path, 'w') as f:
-        f.write(readme_content)
-    print(f"README.md created successfully at {readme_path}")
-
-def main(file_path):
-    """Main function to run the analysis."""
-    try:
-        df = pd.read_csv(file_path, encoding='ISO-8859-1')
-        print(f"Dataset loaded: {file_path}")
-    except Exception as e:
-        print(f"Failed to load dataset: {e}")
-        return
-
-    # Determine output directory based on input file name
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_dir = base_name
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    try:
-        plot_paths = generate_plots(df, output_dir)
-        generate_readme(output_dir, df, plot_paths)
-        print("Analysis complete!")
+        print(f"Analysis completed. Outputs saved in: {output_dir}")
     except Exception as e:
         print(f"Error during analysis: {e}")
 
+# Function to generate a story using OpenAI's GPT
+def generate_story_with_llm(summary):
+    try:
+        response = ChatCompletion.create(
+            model="gpt-4",
+            messages=[ 
+                {"role": "system", "content": "You are an analyst narrating insights from a dataset."},
+                {"role": "user", "content": summary}
+            ],
+            api_key=AIPROXY_TOKEN  # Use the new AIPROXY_TOKEN for authentication
+        )
+        return response['choices'][0]['message']['content']
+    except Exception as e:
+        return f"Error generating story with LLM: {e}"
+
+# Main execution
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) != 2:
-        print("Usage: python autolysis.py <path_to_csv_file>")
+        print("Usage: python analyze_story.py <path_to_csv>")
     else:
-        main(sys.argv[1])
+        csv_file = sys.argv[1]
+        analyze_and_visualize(csv_file)

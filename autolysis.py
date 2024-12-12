@@ -4,7 +4,9 @@
 #   "pandas",
 #   "matplotlib",
 #   "seaborn",
-#   "numpy"
+#   "numpy",
+#   "plotly",
+#   "scipy"
 # ]
 # ///
 import os
@@ -12,6 +14,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import plotly.express as px
+from scipy.stats import pearsonr
 
 # Set global seaborn style
 sns.set_theme(style="whitegrid")
@@ -25,6 +29,16 @@ def analyze_categorical_column(column, df, top_n=5):
     """Generate insights for categorical columns."""
     return df[column].value_counts().head(top_n)
 
+def correlation_analysis(df):
+    """Generate a heatmap for correlations between numerical columns."""
+    corr = df.corr()
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f')
+    plt.title('Correlation Heatmap')
+    plt.savefig('correlation_heatmap.png', bbox_inches='tight')
+    plt.close()
+    return 'correlation_heatmap.png'
+
 def generate_plots(df, output_dir):
     """Generate a variety of plots based on the dataset."""
     os.makedirs(output_dir, exist_ok=True)
@@ -33,7 +47,7 @@ def generate_plots(df, output_dir):
 
     # Numerical columns
     numerical_columns = [col for col in df.select_dtypes(include=[np.number]).columns if is_meaningful_column(col, df)]
-    for i, column in enumerate(numerical_columns[:2]):  # Limit to first 2 meaningful columns
+    for i, column in enumerate(numerical_columns[:2]):
         try:
             plt.figure(figsize=(8, 6))
             if i == 0:  # Histogram for the first column
@@ -63,8 +77,7 @@ def generate_plots(df, output_dir):
                 data=df, 
                 y=column, 
                 order=df[column].value_counts().index[:5],
-                palette='viridis',
-                hue=column
+                palette='viridis'
             )
             plt.title(f'Top Categories in {column}')
             plt.ylabel(column)
@@ -77,6 +90,13 @@ def generate_plots(df, output_dir):
             plt.close()
         except Exception as e:
             print(f"Error plotting categories for column {column}: {e}")
+
+    # Add correlation analysis
+    try:
+        correlation_path = correlation_analysis(df)
+        plot_paths.append(correlation_path)
+    except Exception as e:
+        print(f"Error generating correlation heatmap: {e}")
 
     return plot_paths
 

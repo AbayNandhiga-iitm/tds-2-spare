@@ -1,4 +1,4 @@
-# /// script
+# /// metadata
 # requires-python = ">=3.8"
 # dependencies = [
 #   "pandas>=1.3.0",
@@ -12,13 +12,15 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import openai
+from scipy import stats
 import traceback
 
-# --- FUNCTIONS ---
-
+# Function to automatically load CSV files with encoding handling
 def load_csv_with_encoding(csv_file):
-    """Load a CSV file with fallback encoding handling."""
+    """
+    Load a CSV file with encoding handling.
+    Tries multiple encodings to read the file.
+    """
     encodings = ['utf-8', 'ISO-8859-1', 'latin1', 'utf-16']
     for encoding in encodings:
         try:
@@ -27,119 +29,106 @@ def load_csv_with_encoding(csv_file):
             continue
     raise Exception(f"Unable to read {csv_file} with common encodings.")
 
+# Function to clean and process columns dynamically
 def clean_and_process_columns(df):
-    """Clean the dataset dynamically based on column types."""
-    # Drop high-cardinality categorical columns
+    """
+    Clean and process the dataset based on column types.
+    Removes columns with high cardinality, processes missing data, and removes outliers.
+    """
+    # Remove columns with too many unique values (categorical columns with high cardinality)
     for col in df.select_dtypes(include=['object']).columns:
         if df[col].nunique() > 50:
             df = df.drop(columns=[col])
-    
-    # Convert applicable columns to numeric and drop completely empty columns
-    df = df.apply(pd.to_numeric, errors='coerce')
-    df = df.dropna(how='all', axis=1)  # Drop columns with all NaNs
 
+    # Convert remaining columns to numeric and remove those that can't be converted
+    df = df.apply(pd.to_numeric, errors='coerce')
+    df = df.dropna(how='all', axis=1)
+    
+    # Detect and remove outliers using Z-score for numerical columns
+    z_scores = stats.zscore(df.select_dtypes(include=['number']))
+    df = df[(z_scores < 3).all(axis=1)]
+    
     return df
 
-def generate_visualizations(df, output_dir, dataset_name):
-    """Generate visualizations dynamically for any dataset."""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    visualizations = []
+# Function to create visualizations
+def generate_visualizations(df, dataset_name):
+    """
+    Generate pairplot and boxplot visualizations for the dataset.
+    """
+    # Create a directory to save the visualizations
+    output_dir = f'output/{dataset_name}'
+    os.makedirs(output_dir, exist_ok=True)
 
     # Pairplot for numerical data
-    numeric_data = df.select_dtypes(include=['number'])
-    if not numeric_data.empty:
-        plt.figure(figsize=(10, 8))
-        sns.pairplot(numeric_data, diag_kind='kde')
-        pairplot_path = os.path.join(output_dir, f"{dataset_name}_pairplot.png")
-        plt.savefig(pairplot_path)
-        plt.close()
-        visualizations.append(pairplot_path)
+    pairplot_file = os.path.join(output_dir, 'pairplot.png')
+    sns.pairplot(df.select_dtypes(include=['number']))
+    plt.savefig(pairplot_file)
+    plt.close()
 
-    # Boxplot for categorical vs numerical data
-    for cat_col in df.select_dtypes(include=['object', 'category']).columns:
-        for num_col in numeric_data.columns:
-            plt.figure(figsize=(10, 6))
+    # Boxplot for categorical vs numerical data (if present)
+    for cat_col in df.select_dtypes(include=['object']).columns:
+        for num_col in df.select_dtypes(include=['number']).columns:
+            boxplot_file = os.path.join(output_dir, f'boxplot_{cat_col}_vs_{num_col}.png')
             sns.boxplot(x=cat_col, y=num_col, data=df)
-            boxplot_path = os.path.join(output_dir, f"{dataset_name}_boxplot_{cat_col}_{num_col}.png")
-            plt.savefig(boxplot_path)
+            plt.savefig(boxplot_file)
             plt.close()
-            visualizations.append(boxplot_path)
 
-    return visualizations
+# Function to generate a detailed README.md
+def generate_readme(df, dataset_name, output_dir):
+    """
+    Generate a README.md file summarizing the dataset and including visualizations.
+    """
+    readme_path = os.path.join(output_dir, 'README.md')
+    with open(readme_path, 'w') as f:
+        f.write(f"# Analysis of {dataset_name}\n\n")
+        f.write(f"**Number of rows**: {df.shape[0]}\n")
+        f.write(f"**Number of columns**: {df.shape[1]}\n\n")
+        f.write("## Column Details:\n")
+        for col in df.columns:
+            f.write(f"- **{col}**: {df[col].dtype}, missing values: {df[col].isna().sum()}\n")
+        f.write("\n## Visualizations:\n")
+        f.write("### Pairplot of numerical columns:\n")
+        f.write("![Pairplot](pairplot.png)\n")
+        for cat_col in df.select_dtypes(include=['object']).columns:
+            for num_col in df.select_dtypes(include=['number']).columns:
+                f.write(f"### Boxplot: {cat_col} vs {num_col}:\n")
+                f.write(f"![Boxplot](boxplot_{cat_col}_vs_{num_col}.png)\n")
+        f.write("\n## Notes:\n")
+        f.write("The analysis includes basic visualizations and summary statistics of the dataset.\n")
 
-def summarize_dataset(df):
-    """Generate a textual summary of the dataset."""
-    summary = f"Dataset contains {df.shape[0]} rows and {df.shape[1]} columns.\n\n"
-    summary += "### Column Details:\n"
-    for col in df.columns:
-        summary += f"- `{col}`: {df[col].dtype} ({df[col].nunique()} unique values)\n"
-    return summary
-
-def create_readme_with_llm(dataset_name, summary, visualizations):
-    """Generate a README file with LLM-crafted narrative."""
-    try:
-        prompt = f"""
-You are an expert in data science reporting. Based on the dataset name '{dataset_name}', the summary, and the following visualizations, write a clear, context-rich Markdown README file. 
-### Dataset Summary:
-{summary}
-
-### Visualizations:
-{', '.join([os.path.basename(v) for v in visualizations])}
-"""
-        # LLM API call (use OpenAI GPT model)
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=500
-        )
-        return response['choices'][0]['text'].strip()
-    except Exception as e:
-        traceback.print_exc()
-        print(f"Error generating README with LLM: {str(e)}")
-        return None
-
-def save_readme(readme_text, output_dir):
-    """Save README file."""
-    readme_path = os.path.join(output_dir, "README.md")
-    with open(readme_path, "w") as readme_file:
-        readme_file.write(readme_text)
-
-def run_analysis(dataset_path):
-    """Perform dynamic analysis on any dataset."""
-    try:
-        dataset_name = os.path.splitext(os.path.basename(dataset_path))[0]
-        output_dir = os.path.join("output", dataset_name)
-        
-        # Step 1: Load Dataset
-        df = load_csv_with_encoding(dataset_path)
-        processed_df = clean_and_process_columns(df)
-        
-        # Step 2: Generate Visualizations
-        visualizations = generate_visualizations(processed_df, output_dir, dataset_name)
-
-        # Step 3: Generate Summary and README
-        summary = summarize_dataset(df)
-        readme_text = create_readme_with_llm(dataset_name, summary, visualizations)
-        
-        if readme_text:
-            save_readme(readme_text, output_dir)
-        else:
-            print(f"README could not be generated for {dataset_name}.")
-        
-        print(f"Analysis completed for {dataset_name}. Results saved in {output_dir}.")
+# Function to process and analyze datasets
+def process_datasets():
+    """
+    Process all CSV files in the current directory, perform analysis, and generate reports.
+    """
+    # List all CSV files in the current directory
+    csv_files = [f for f in os.listdir() if f.endswith('.csv')]
     
-    except Exception as e:
-        traceback.print_exc()
-        print(f"Error processing dataset {dataset_path}: {str(e)}")
+    for csv_file in csv_files:
+        try:
+            # Load the dataset
+            df = load_csv_with_encoding(csv_file)
+            
+            # Clean and process the dataset
+            df = clean_and_process_columns(df)
+            
+            # Create a directory for this dataset
+            dataset_name = os.path.splitext(csv_file)[0]
+            output_dir = f'output/{dataset_name}'
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate visualizations and save them
+            generate_visualizations(df, dataset_name)
+            
+            # Generate a README.md file summarizing the analysis
+            generate_readme(df, dataset_name, output_dir)
 
-# --- MAIN EXECUTION ---
+            print(f"Analysis for {csv_file} completed successfully.")
 
+        except Exception as e:
+            print(f"Error processing {csv_file}: {e}")
+            traceback.print_exc()
+
+# Run the script
 if __name__ == "__main__":
-    datasets = [f for f in os.listdir('.') if f.endswith('.csv')]
-    if datasets:
-        for dataset in datasets:
-            run_analysis(dataset)
-    else:
-        print("No CSV datasets found in the current directory.")
+    process_datasets()

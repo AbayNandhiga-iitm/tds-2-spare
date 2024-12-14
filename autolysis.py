@@ -6,11 +6,6 @@
 #   "seaborn>=0.11.0",
 #   "openai>=0.27.0"
 # ]
-# metadata = {
-#   "description": "Dynamic dataset analysis with README and visualization generation.",
-#   "author": "Abay Nandhiga",
-#   "version": "2.1"
-# }
 # ///
 
 import os

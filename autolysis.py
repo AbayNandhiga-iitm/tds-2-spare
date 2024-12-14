@@ -7,6 +7,7 @@
 #   "requests>=2.25.0",
 #   "openai>=0.27.0"
 # ]
+# ///
 import os
 import sys
 import pandas as pd
@@ -124,4 +125,3 @@ if __name__ == "__main__":
     else:
         csv_file = sys.argv[1]
         analyze_and_visualize(csv_file)
-# ///

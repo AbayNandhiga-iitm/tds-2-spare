@@ -6,12 +6,18 @@
 #   "seaborn>=0.11.0",
 #   "openai>=0.27.0"
 # ]
+# metadata = {
+#   "description": "Dynamic dataset analysis with README and visualization generation.",
+#   "author": "Abay Nandhiga",
+#   "version": "2.1"
+# }
 # ///
 
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import openai
 import traceback
 
 # --- FUNCTIONS ---
@@ -28,7 +34,7 @@ def load_csv_with_encoding(csv_file):
 
 def clean_and_process_columns(df):
     """Clean the dataset dynamically based on column types."""
-    # Drop high-cardinality columns
+    # Drop high-cardinality categorical columns
     for col in df.select_dtypes(include=['object']).columns:
         if df[col].nunique() > 50:
             df = df.drop(columns=[col])
@@ -76,18 +82,34 @@ def summarize_dataset(df):
         summary += f"- `{col}`: {df[col].dtype} ({df[col].nunique()} unique values)\n"
     return summary
 
-def generate_readme(dataset_name, output_dir, summary, visualizations):
-    """Generate a README.md file for the dataset."""
+def create_readme_with_llm(dataset_name, summary, visualizations):
+    """Generate a README file with LLM-crafted narrative."""
+    try:
+        prompt = f"""
+You are an expert in data science reporting. Based on the dataset name '{dataset_name}', the summary, and the following visualizations, write a clear, context-rich Markdown README file. 
+### Dataset Summary:
+{summary}
+
+### Visualizations:
+{', '.join([os.path.basename(v) for v in visualizations])}
+"""
+        # LLM API call (use OpenAI GPT model)
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=500
+        )
+        return response['choices'][0]['text'].strip()
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Error generating README with LLM: {str(e)}")
+        return None
+
+def save_readme(readme_text, output_dir):
+    """Save README file."""
     readme_path = os.path.join(output_dir, "README.md")
     with open(readme_path, "w") as readme_file:
-        readme_file.write(f"# Analysis for {dataset_name}\n\n")
-        readme_file.write("## Summary\n\n")
-        readme_file.write(summary + "\n\n")
-        if visualizations:
-            readme_file.write("## Visualizations\n\n")
-            for vis in visualizations:
-                vis_rel_path = os.path.relpath(vis, output_dir)
-                readme_file.write(f"![{os.path.basename(vis_rel_path)}]({vis_rel_path})\n\n")
+        readme_file.write(readme_text)
 
 def run_analysis(dataset_path):
     """Perform dynamic analysis on any dataset."""
@@ -102,9 +124,14 @@ def run_analysis(dataset_path):
         # Step 2: Generate Visualizations
         visualizations = generate_visualizations(processed_df, output_dir, dataset_name)
 
-        # Step 3: Generate README
+        # Step 3: Generate Summary and README
         summary = summarize_dataset(df)
-        generate_readme(dataset_name, output_dir, summary, visualizations)
+        readme_text = create_readme_with_llm(dataset_name, summary, visualizations)
+        
+        if readme_text:
+            save_readme(readme_text, output_dir)
+        else:
+            print(f"README could not be generated for {dataset_name}.")
         
         print(f"Analysis completed for {dataset_name}. Results saved in {output_dir}.")
     

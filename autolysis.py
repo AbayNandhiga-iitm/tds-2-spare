@@ -1,8 +1,7 @@
-# ///script
+# /// Script
 # requires-python = ">=3.8"
 # dependencies = [
 #   "pandas>=1.3.0",
-#   "seaborn>=0.11.0",
 #   "matplotlib>=3.4.0",
 #   "numpy>=1.20.0",
 #   "scipy>=1.7.0",
@@ -11,7 +10,6 @@
 # ///
 import os
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
@@ -68,7 +66,7 @@ def generate_visualizations(df, output_dir):
     numerical_columns = [col for col in df.select_dtypes(include=[np.number]).columns if is_meaningful_column(col, df)]
     for column in numerical_columns:
         plt.figure(figsize=(8, 6))
-        sns.histplot(df[column], kde=True, bins=30, color='teal')
+        plt.hist(df[column].dropna(), bins=30, color='teal', edgecolor='black', alpha=0.7)
         plt.title(f"Histogram of {column}")
         plt.xlabel(column)
         plt.ylabel("Frequency")
@@ -82,15 +80,10 @@ def generate_visualizations(df, output_dir):
     categorical_columns = [col for col in df.select_dtypes(exclude=[np.number]).columns if is_meaningful_column(col, df)]
     for column in categorical_columns:
         plt.figure(figsize=(8, 6))
-        sns.countplot(
-            data=df, 
-            y=column, 
-            order=df[column].value_counts().index[:5], 
-            palette='viridis'
-        )
+        df[column].value_counts().head(5).plot(kind='barh', color='viridis', edgecolor='black', alpha=0.7)
         plt.title(f"Top Categories in {column}")
-        plt.ylabel(column)
         plt.xlabel("Count")
+        plt.ylabel(column)
         plt.grid(axis='x', linestyle='--', alpha=0.7)
         plot_path = os.path.join(output_dir, f"{column}_categories.png")
         plt.savefig(plot_path)
@@ -127,10 +120,8 @@ def generate_readme_with_ai(output_dir, df, plot_paths):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a professional data analysis assistant."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "system", "content": "You are a professional data analysis assistant."},
+                      {"role": "user", "content": prompt}],
             max_tokens=1000,
             temperature=0.7
         )

@@ -5,8 +5,8 @@
 #   "seaborn>=0.11.0",
 #   "matplotlib>=3.4.0",
 #   "numpy>=1.20.0",
-#   "openai>=0.27.0",
-#   "scipy>=1.7.0"
+#   "scipy>=1.7.0",
+#   "openai>=0.27.0"
 # ]
 # ///
 import os

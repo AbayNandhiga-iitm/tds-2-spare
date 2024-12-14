@@ -1,8 +1,7 @@
-# /// metadata
+# ///script
 # requires-python = ">=3.8"
 # dependencies = [
 #   "pandas>=1.3.0",
-#   "matplotlib>=3.4.0",
 #   "seaborn>=0.11.0",
 #   "openai>=0.27.0"
 # ]
@@ -10,7 +9,6 @@
 
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 import traceback
@@ -50,28 +48,22 @@ def clean_and_process_columns(df):
     
     return df
 
-# Function to create visualizations
+# Function to create visualizations (Boxplots)
 def generate_visualizations(df, dataset_name):
     """
-    Generate pairplot and boxplot visualizations for the dataset.
+    Generate boxplot visualizations for the dataset.
     """
     # Create a directory to save the visualizations
     output_dir = f'output/{dataset_name}'
     os.makedirs(output_dir, exist_ok=True)
-
-    # Pairplot for numerical data
-    pairplot_file = os.path.join(output_dir, 'pairplot.png')
-    sns.pairplot(df.select_dtypes(include=['number']))
-    plt.savefig(pairplot_file)
-    plt.close()
 
     # Boxplot for categorical vs numerical data (if present)
     for cat_col in df.select_dtypes(include=['object']).columns:
         for num_col in df.select_dtypes(include=['number']).columns:
             boxplot_file = os.path.join(output_dir, f'boxplot_{cat_col}_vs_{num_col}.png')
             sns.boxplot(x=cat_col, y=num_col, data=df)
-            plt.savefig(boxplot_file)
-            plt.close()
+            sns.savefig(boxplot_file)
+            sns.plt.close()
 
 # Function to generate a detailed README.md
 def generate_readme(df, dataset_name, output_dir):
@@ -87,8 +79,6 @@ def generate_readme(df, dataset_name, output_dir):
         for col in df.columns:
             f.write(f"- **{col}**: {df[col].dtype}, missing values: {df[col].isna().sum()}\n")
         f.write("\n## Visualizations:\n")
-        f.write("### Pairplot of numerical columns:\n")
-        f.write("![Pairplot](pairplot.png)\n")
         for cat_col in df.select_dtypes(include=['object']).columns:
             for num_col in df.select_dtypes(include=['number']).columns:
                 f.write(f"### Boxplot: {cat_col} vs {num_col}:\n")
@@ -132,3 +122,4 @@ def process_datasets():
 # Run the script
 if __name__ == "__main__":
     process_datasets()
+

@@ -11,20 +11,12 @@
 # ///
 
 import os
-import subprocess
 import sys
+import subprocess
+import traceback
 
-# Function to ensure all dependencies are installed
-def ensure_dependencies(dependencies):
-    for dep in dependencies:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
-        except subprocess.CalledProcessError as e:
-            print(f"Error installing {dep}: {e}")
-            sys.exit(1)
-
-# List of dependencies
-dependencies = [
+# List of required dependencies
+REQUIRED_LIBRARIES = [
     "pandas>=1.3.0",
     "seaborn>=0.11.0",
     "matplotlib>=3.4.0",
@@ -33,16 +25,40 @@ dependencies = [
     "openai>=0.27.0"
 ]
 
-# Ensure dependencies are installed
-ensure_dependencies(dependencies)
+def ensure_pip_and_dependencies():
+    """Ensures pip and required libraries are installed."""
+    try:
+        # Ensure pip is installed
+        import ensurepip
+        ensurepip.bootstrap()
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+    except Exception as e:
+        print(f"Failed to bootstrap pip: {e}")
+        sys.exit(1)
 
+    # Install missing dependencies
+    for library in REQUIRED_LIBRARIES:
+        try:
+            lib_name = library.split(">=")[0]
+            __import__(lib_name)  # Check if the library is already installed
+        except ImportError:
+            print(f"{lib_name} not found. Installing...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", library])
+            except Exception as install_error:
+                print(f"Failed to install {library}: {install_error}")
+                sys.exit(1)
+
+# Ensure all dependencies are available before running the script
+ensure_pip_and_dependencies()
+
+# Proceed with the rest of the script
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 import openai
-import traceback
 
 # Set your OpenAI API token
 openai.api_key = os.getenv("AIPROXY_TOKEN")  # Replace with your token or set via environment variable

@@ -11,60 +11,22 @@
 # ///
 
 import os
-import sys
-import subprocess
-import traceback
-
-# List of required dependencies
-REQUIRED_LIBRARIES = [
-    "pandas>=1.3.0",
-    "seaborn>=0.11.0",
-    "matplotlib>=3.4.0",
-    "numpy>=1.20.0",
-    "scipy>=1.7.0",
-    "openai>=0.27.0"
-]
-
-def ensure_pip_and_dependencies():
-    """Ensures pip and required libraries are installed."""
-    try:
-        # Ensure pip is installed
-        import ensurepip
-        ensurepip.bootstrap()
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-    except Exception as e:
-        print(f"Failed to bootstrap pip: {e}")
-        sys.exit(1)
-
-    # Install missing dependencies
-    for library in REQUIRED_LIBRARIES:
-        try:
-            lib_name = library.split(">=")[0]
-            __import__(lib_name)  # Check if the library is already installed
-        except ImportError:
-            print(f"{lib_name} not found. Installing...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", library])
-            except Exception as install_error:
-                print(f"Failed to install {library}: {install_error}")
-                sys.exit(1)
-
-# Ensure all dependencies are available before running the script
-ensure_pip_and_dependencies()
-
-# Proceed with the rest of the script
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 import openai
+import traceback
 
 # Set your OpenAI API token
 openai.api_key = os.getenv("AIPROXY_TOKEN")  # Replace with your token or set via environment variable
 
 # Load CSV with encoding handling
 def load_csv_with_encoding(csv_file):
+    """
+    Load CSV file with support for multiple encodings.
+    """
     encodings = ['utf-8', 'ISO-8859-1', 'latin1', 'utf-16']
     for encoding in encodings:
         try:
@@ -75,6 +37,10 @@ def load_csv_with_encoding(csv_file):
 
 # Clean and process columns
 def clean_and_process_columns(df):
+    """
+    Clean the DataFrame by handling missing values, removing high-cardinality columns,
+    converting numeric data, and removing outliers.
+    """
     # Remove high-cardinality object columns
     for col in df.select_dtypes(include=['object']).columns:
         if df[col].nunique() > 50:
@@ -92,17 +58,26 @@ def clean_and_process_columns(df):
     df = df[(np.abs(z_scores) < 3).all(axis=1)]
     return df
 
-# Helper function to check column meaningfulness
+# Check if a column is meaningful for analysis
 def is_meaningful_column(column, df, unique_min=0.1, unique_max=0.9):
+    """
+    Determine if a column is meaningful for analysis based on unique value ratios.
+    """
     unique_ratio = df[column].nunique() / len(df[column])
     return unique_min < unique_ratio < unique_max
 
 # Analyze categorical columns
 def analyze_categorical_column(column, df, top_n=5):
+    """
+    Analyze and return the top N categories of a column.
+    """
     return df[column].value_counts().head(top_n)
 
 # Generate visualizations
 def generate_visualizations(df, output_dir):
+    """
+    Generate histograms for numerical columns and count plots for categorical columns.
+    """
     os.makedirs(output_dir, exist_ok=True)
     plot_paths = []
 
@@ -142,7 +117,10 @@ def generate_visualizations(df, output_dir):
     return plot_paths
 
 # Generate README using OpenAI
-def generate_readme_with_ai(output_dir, df, plot_paths):
+def generate_readme_with_ai(output_dir, df, plot_paths, csv_name):
+    """
+    Generate a README file summarizing the analysis using OpenAI API.
+    """
     num_rows, num_columns = df.shape
     dtype_summary = "\n".join([f"- **{dtype}**: {count} columns" for dtype, count in df.dtypes.value_counts().items()])
     numerical_summary = "\n".join(
@@ -153,7 +131,7 @@ def generate_readme_with_ai(output_dir, df, plot_paths):
     )
 
     prompt = f"""
-    You are an AI tasked with creating a Markdown README for a dataset analysis.
+    You are an AI tasked with creating a Markdown README for a dataset analysis named "{csv_name}".
     - Dataset contains {num_rows} rows and {num_columns} columns.
     - Data types breakdown:
     {dtype_summary}
@@ -161,9 +139,9 @@ def generate_readme_with_ai(output_dir, df, plot_paths):
     {numerical_summary}
     - Categorical columns insights:
     {categorical_summary}
-    - Visualizations were generated for key columns.
+    - Visualizations have been generated and saved.
 
-    Write a professional README.md summarizing these insights and linking the visualizations.
+    Write a professional README.md summarizing these insights and referencing the visualizations.
     """
 
     try:
@@ -185,16 +163,24 @@ def generate_readme_with_ai(output_dir, df, plot_paths):
 
 # Main function to process datasets
 def process_datasets():
+    """
+    Process all CSV files in the current directory.
+    """
     csv_files = [f for f in os.listdir() if f.endswith('.csv')]
+    if not csv_files:
+        print("No CSV files found in the current directory.")
+        return
+
     for csv_file in csv_files:
         try:
+            print(f"Processing {csv_file}...")
             df = load_csv_with_encoding(csv_file)
             df = clean_and_process_columns(df)
             base_name = os.path.splitext(os.path.basename(csv_file))[0]
             output_dir = os.path.join("output", base_name)
             os.makedirs(output_dir, exist_ok=True)
             plot_paths = generate_visualizations(df, output_dir)
-            generate_readme_with_ai(output_dir, df, plot_paths)
+            generate_readme_with_ai(output_dir, df, plot_paths, csv_file)
             print(f"Analysis for {csv_file} completed successfully.")
         except Exception as e:
             print(f"Error processing {csv_file}: {e}")

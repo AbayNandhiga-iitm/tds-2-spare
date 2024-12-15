@@ -165,7 +165,34 @@ def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
         f.write(readme_content)
     print(f"README.md created successfully at {readme_path}")
 
-# Main processing function with optimized handling for large datasets
+# Modularized data processing
+def process_single_dataset(csv_file):
+    """
+    Process a single dataset: load, clean, visualize, and generate README.
+    """
+    try:
+        print(f"Processing {csv_file}...")
+        # Use chunking for large datasets
+        chunks = pd.read_csv(csv_file, chunksize=10000)
+        df = pd.concat(chunks, ignore_index=True)
+
+        df = clean_and_process_columns(df)
+        base_name = os.path.splitext(os.path.basename(csv_file))[0]
+        output_dir = os.path.join("output", base_name)
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate visualizations
+        plot_paths = visualize_data(df, output_dir, base_name)
+
+        # Generate README
+        generate_readme_with_ai(df, plot_paths, csv_file, output_dir)
+
+        print(f"Analysis for {csv_file} completed successfully.")
+    except Exception as e:
+        print(f"Error processing {csv_file}: {e}")
+        traceback.print_exc()
+
+# Main processing function with optimized handling for multiple datasets
 def process_datasets():
     """
     Process all CSV files in the current directory with memory-efficient handling for large datasets.
@@ -176,27 +203,7 @@ def process_datasets():
         return
 
     for csv_file in csv_files:
-        try:
-            print(f"Processing {csv_file}...")
-            # Use chunking for large datasets
-            chunks = pd.read_csv(csv_file, chunksize=10000)
-            df = pd.concat(chunks, ignore_index=True)
-
-            df = clean_and_process_columns(df)
-            base_name = os.path.splitext(os.path.basename(csv_file))[0]
-            output_dir = os.path.join("output", base_name)
-            os.makedirs(output_dir, exist_ok=True)
-
-            # Generate visualizations
-            plot_paths = visualize_data(df, output_dir, base_name)
-
-            # Generate README
-            generate_readme_with_ai(df, plot_paths, csv_file, output_dir)
-
-            print(f"Analysis for {csv_file} completed successfully.")
-        except Exception as e:
-            print(f"Error processing {csv_file}: {e}")
-            traceback.print_exc()
+        process_single_dataset(csv_file)
 
 # Run the script
 if __name__ == "__main__":

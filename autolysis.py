@@ -9,7 +9,33 @@
 #   "openai>=0.27.0"
 # ]
 # ///
+
 import os
+import subprocess
+import sys
+
+# Function to ensure all dependencies are installed
+def ensure_dependencies(dependencies):
+    for dep in dependencies:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", dep])
+        except subprocess.CalledProcessError as e:
+            print(f"Error installing {dep}: {e}")
+            sys.exit(1)
+
+# List of dependencies
+dependencies = [
+    "pandas>=1.3.0",
+    "seaborn>=0.11.0",
+    "matplotlib>=3.4.0",
+    "numpy>=1.20.0",
+    "scipy>=1.7.0",
+    "openai>=0.27.0"
+]
+
+# Ensure dependencies are installed
+ensure_dependencies(dependencies)
+
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt

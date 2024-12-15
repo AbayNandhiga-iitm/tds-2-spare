@@ -1,4 +1,5 @@
-# Dependencies (metadata)
+# /// 
+# requires-python = ">=3.8"
 # dependencies = [
 #   "pandas>=1.3.0",
 #   "seaborn>=0.11.0",
@@ -7,6 +8,7 @@
 #   "scipy>=1.7.0",
 #   "openai>=0.27.0"
 # ]
+# ///
 
 import os
 import pandas as pd
@@ -15,25 +17,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 import openai
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import train_test_split
 import traceback
 
-# Set your OpenAI API token
-openai.api_key = os.getenv("AIPROXY_TOKEN")  # Use the environment variable AIPROXY_TOKEN
-
-# Load CSV with encoding handling
-def load_csv_with_encoding(csv_file):
-    """
-    Load CSV file with support for multiple encodings.
-    """
-    encodings = ['utf-8', 'ISO-8859-1', 'latin1', 'utf-16']
-    for encoding in encodings:
-        try:
-            return pd.read_csv(csv_file, encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-    raise Exception(f"Unable to read {csv_file} with common encodings.")
+# Set your OpenAI API token from environment variable
+openai.api_key = os.getenv("AIPROXY_TOKEN")  # AIPROXY_TOKEN
 
 # Clean and process columns
 def clean_and_process_columns(df):
@@ -58,13 +45,15 @@ def clean_and_process_columns(df):
     
     return df
 
-# Visualize the data
+# Visualize the data and save the plots
 def visualize_data(df, output_dir, csv_name):
     """
-    Generate and save visualizations for the data.
+    Generate and save visualizations for the data (histograms and count plots).
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+
+    plot_paths = []
 
     # Create visualizations for numerical data
     for col in df.select_dtypes(include=[np.number]).columns:
@@ -75,103 +64,102 @@ def visualize_data(df, output_dir, csv_name):
         plt.ylabel("Frequency")
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"{col}_histogram.png"))
+        plot_path = os.path.join(output_dir, f"{col}_histogram.png")
+        plt.savefig(plot_path)
+        plot_paths.append(plot_path)
         plt.close()
 
-    # Create visualizations for categorical data
-    for col in df.select_dtypes(exclude=[np.number]).columns:
+    # Create visualizations for categorical columns
+    for col in df.select_dtypes(include=[np.object]).columns:
         plt.figure(figsize=(8, 6))
-        sns.countplot(x=col, data=df)
-        plt.title(f"Countplot of {col} in {csv_name}")
+        sns.countplot(x=df[col])
+        plt.title(f"Count of categories in {col} for {csv_name}")
         plt.xlabel(col)
         plt.ylabel("Count")
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"{col}_countplot.png"))
+        plot_path = os.path.join(output_dir, f"{col}_categories.png")
+        plt.savefig(plot_path)
+        plot_paths.append(plot_path)
         plt.close()
 
-# Generate dynamic README.md
-def generate_dynamic_readme(output_dir, df, plot_paths, csv_name):
+    return plot_paths
+
+# Generate a detailed README file
+def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
     """
-    Generate a detailed README.md for the dataset analysis.
+    Generate a README.md file using OpenAI API.
     """
     num_rows, num_columns = df.shape
+    dtype_summary = "\n".join([f"- **{dtype}**: {count} columns" for dtype, count in df.dtypes.value_counts().items()])
+    
+    # Summary for numerical columns
     numerical_summary = "\n".join(
         [f"- **{col}**: Mean = {df[col].mean():.2f}, Std Dev = {df[col].std():.2f}" for col in df.select_dtypes(include=[np.number]).columns]
     )
-    categorical_summary = "\n".join(
-        [f"- **{col}**: Top categories - {', '.join(map(str, analyze_categorical_column(col, df).index))}" for col in df.select_dtypes(exclude=[np.number]).columns]
-    )
-
-    correlation_matrix = df.corr()
-    correlation_summary = f"Correlation matrix:\n{correlation_matrix}"
-
-    # Dynamic prompt creation for AI-generated README
-    prompt = f"""
-    Based on the dataset "{csv_name}", the following insights were derived:
-    - The dataset contains {num_rows} rows and {num_columns} columns.
-    - A summary of numerical features: {numerical_summary}
-    - Key findings from categorical data analysis: {categorical_summary}
-    - Correlation analysis insights: {correlation_summary}
-    - Visualizations: {', '.join([os.path.basename(path) for path in plot_paths])} are included to support these findings.
-    Provide a detailed explanation of the key insights, supported by the data and visualizations.
-    """
-
-    try:
-        # Fallback to GPT-3.5 if GPT-4 is unavailable
-        response = openai.Completion.create(
-            model="gpt-4",  # Priority use of GPT-4
-            prompt=prompt,
-            max_tokens=1500,
-            temperature=0.7
-        )
-    except openai.error.InvalidRequestError:  # Fallback case if GPT-4 is unavailable
-        response = openai.Completion.create(
-            model="gpt-3.5-turbo",  # Use GPT-3.5 if GPT-4 is unavailable
-            prompt=prompt,
-            max_tokens=1500,
-            temperature=0.7
-        )
     
-        print("Fallback to GPT-3.5 due to GPT-4 unavailability.")
-
-    readme_content = response.choices[0].text.strip()
-
-    # Save the README.md file
-    with open(os.path.join(output_dir, "README.md"), 'w') as f:
-        f.write(readme_content)
-
-# Analyze categorical columns
-def analyze_categorical_column(col, df):
+    # Summary for categorical columns
+    categorical_summary = "\n".join(
+        [f"- **{col}**: Top categories - {', '.join(map(str, df[col].value_counts().index[:5]))}" for col in df.select_dtypes(exclude=[np.number]).columns]
+    )
+    
+    prompt = f"""
+    You are a professional data analysis assistant. Generate a Markdown README for a dataset analysis named "{csv_name}".
+    The dataset contains {num_rows} rows and {num_columns} columns.
+    - Data types breakdown:
+    {dtype_summary}
+    - Numerical columns insights:
+    {numerical_summary}
+    - Categorical columns insights:
+    {categorical_summary}
+    - Visualizations have been generated and saved. List of plots:
+    {', '.join(plot_paths)}
+    
+    Provide a professional summary, including any insights or conclusions drawn from this analysis.
     """
-    Analyze and return the top categories for a categorical column.
-    """
-    return df[col].value_counts().head(5)
 
-# Main Function to Process and Analyze Dataset
-def main(csv_file):
     try:
-        # Load data
-        df = load_csv_with_encoding(csv_file)
-        
-        # Clean data
-        df_clean = clean_and_process_columns(df)
-        
-        # Create output directory for visualizations
-        output_dir = os.path.join(os.getcwd(), "output")
-        plot_paths = visualize_data(df_clean, output_dir, os.path.basename(csv_file))
-        
-        # Generate detailed README.md
-        generate_dynamic_readme(output_dir, df_clean, plot_paths, os.path.basename(csv_file))
-        
-        print(f"Processing of {csv_file} is complete.")
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # Ensure correct model version
+            messages=[{"role": "system", "content": "You are a professional data analysis assistant."},
+                      {"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        readme_content = response['choices'][0]['message']['content'].strip()
     except Exception as e:
-        print(f"Error processing {csv_file}: {e}")
-        print(traceback.format_exc())
+        readme_content = f"Error generating README: {e}\nFallback prompt:\n{prompt}"
 
-# Example usage
+    readme_path = os.path.join(output_dir, 'README.md')
+    with open(readme_path, 'w') as f:
+        f.write(readme_content)
+    print(f"README.md created successfully at {readme_path}")
+
+# Main function to process datasets
+def process_datasets():
+    """
+    Process all CSV files in the current directory.
+    """
+    csv_files = [f for f in os.listdir() if f.endswith('.csv')]
+    if not csv_files:
+        print("No CSV files found in the current directory.")
+        return
+
+    for csv_file in csv_files:
+        try:
+            print(f"Processing {csv_file}...")
+            df = pd.read_csv(csv_file)
+            df = clean_and_process_columns(df)
+            base_name = os.path.splitext(os.path.basename(csv_file))[0]
+            output_dir = os.path.join("output", base_name)
+            os.makedirs(output_dir, exist_ok=True)
+            plot_paths = visualize_data(df, output_dir, base_name)
+            generate_readme_with_ai(df, plot_paths, csv_file, output_dir)
+            print(f"Analysis for {csv_file} completed successfully.")
+        except Exception as e:
+            print(f"Error processing {csv_file}: {e}")
+            traceback.print_exc()
+
+# Run the script
 if __name__ == "__main__":
-    # Example CSV file for testing
-    csv_file = "path_to_your_data.csv"  # Replace with the actual path
-    main(csv_file)
-
+    process_datasets()

@@ -89,6 +89,8 @@ def generate_visualizations(df, output_dir):
         plt.title(f"Histogram of {column}")
         plt.xlabel(column)
         plt.ylabel("Frequency")
+        plt.axvline(df[column].mean(), color='red', linestyle='dashed', linewidth=1)  # Mean line
+        plt.axvline(df[column].median(), color='blue', linestyle='dashed', linewidth=1)  # Median line
         plt.grid(axis='y', linestyle='--', alpha=0.7)
         plot_path = os.path.join(output_dir, f"{column}_histogram.png")
         plt.savefig(plot_path)
@@ -146,7 +148,7 @@ def generate_readme_with_ai(output_dir, df, plot_paths, csv_name):
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
+            model="gpt-4",
             messages=[{"role": "system", "content": "You are a professional data analysis assistant."},
                       {"role": "user", "content": prompt}],
             max_tokens=1000,

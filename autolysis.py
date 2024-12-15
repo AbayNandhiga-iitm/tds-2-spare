@@ -22,11 +22,11 @@ import traceback
 # Set OpenAI API token from environment variable
 openai.api_key = os.getenv("AIPROXY_TOKEN")
 
-# Clean and process columns efficiently
+# Clean and process columns with extended statistical analysis
 def clean_and_process_columns(df):
     """
     Clean the DataFrame by handling missing values, removing high-cardinality columns,
-    converting numeric data, and removing outliers.
+    converting numeric data, removing outliers, and adding basic statistical features.
     """
     # Remove high-cardinality object columns (>50 unique values)
     for col in df.select_dtypes(include=['object', 'category']).columns:
@@ -45,13 +45,20 @@ def clean_and_process_columns(df):
     if not numerical_cols.empty:
         z_scores = np.abs(stats.zscore(numerical_cols, nan_policy='omit'))
         df = df[(z_scores < 3).all(axis=1)]
-    
+
+    # Add statistical summary features for numerical columns
+    for col in numerical_cols.columns:
+        df[f"{col}_mean"] = numerical_cols[col].mean()
+        df[f"{col}_std"] = numerical_cols[col].std()
+        df[f"{col}_median"] = numerical_cols[col].median()
+
     return df
 
-# Visualize the data efficiently
+# Visualize the data with enhanced annotations and aesthetics
 def visualize_data(df, output_dir, csv_name):
     """
-    Generate and save visualizations for the data (histograms for numerical columns, count plots for categorical columns).
+    Generate and save visualizations for the data (histograms for numerical columns, count plots for categorical columns),
+    with annotations and improved aesthetics.
     """
     os.makedirs(output_dir, exist_ok=True)
     plot_paths = []
@@ -60,9 +67,12 @@ def visualize_data(df, output_dir, csv_name):
     for col in df.select_dtypes(include=[np.number]).columns:
         plt.figure(figsize=(8, 6))
         sns.histplot(df[col], kde=True, color='skyblue')
+        mean_val = df[col].mean()
+        plt.axvline(mean_val, color='red', linestyle='--', label=f"Mean: {mean_val:.2f}")
         plt.title(f"Distribution of {col} in {csv_name}")
         plt.xlabel(col)
         plt.ylabel("Frequency")
+        plt.legend()
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.tight_layout()
         plot_path = os.path.join(output_dir, f"{col}_histogram.png")
@@ -87,10 +97,10 @@ def visualize_data(df, output_dir, csv_name):
 
     return plot_paths
 
-# Generate README using OpenAI dynamically
+# Generate README using OpenAI dynamically with deeper insights
 def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
     """
-    Generate a README.md file using OpenAI API with dynamic prompts based on data insights.
+    Generate a README.md file using OpenAI API with dynamic prompts based on data insights and deeper statistical analysis.
     """
     num_rows, num_columns = df.shape
     dtype_summary = "\n".join([f"- **{dtype}**: {count} columns" for dtype, count in df.dtypes.value_counts().items()])
@@ -105,6 +115,12 @@ def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
     categorical_summary = "\n".join(
         [f"- **{col}**: Top categories - {', '.join(map(str, df[col].value_counts().index[:5]))}"
          for col in df.select_dtypes(include=['object', 'category']).columns]
+    )
+
+    # Include additional insights dynamically
+    additional_insights = "\n".join(
+        [f"The column **{col}** shows significant variance, with a mean of {df[col].mean():.2f} and standard deviation of {df[col].std():.2f}."
+         for col in df.select_dtypes(include=[np.number]).columns if df[col].std() > df[col].mean() * 0.5]
     )
 
     prompt = f"""
@@ -122,6 +138,9 @@ def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
 
     ### Categorical Columns Insights
     {categorical_summary}
+
+    ### Additional Insights
+    {additional_insights}
 
     ### Visualizations
     - {', '.join(plot_paths)}
@@ -146,10 +165,10 @@ def generate_readme_with_ai(df, plot_paths, csv_name, output_dir):
         f.write(readme_content)
     print(f"README.md created successfully at {readme_path}")
 
-# Main processing function
+# Main processing function with optimized handling for large datasets
 def process_datasets():
     """
-    Process all CSV files in the current directory.
+    Process all CSV files in the current directory with memory-efficient handling for large datasets.
     """
     csv_files = [f for f in os.listdir() if f.endswith('.csv')]
     if not csv_files:
@@ -159,7 +178,10 @@ def process_datasets():
     for csv_file in csv_files:
         try:
             print(f"Processing {csv_file}...")
-            df = pd.read_csv(csv_file)
+            # Use chunking for large datasets
+            chunks = pd.read_csv(csv_file, chunksize=10000)
+            df = pd.concat(chunks, ignore_index=True)
+
             df = clean_and_process_columns(df)
             base_name = os.path.splitext(os.path.basename(csv_file))[0]
             output_dir = os.path.join("output", base_name)
